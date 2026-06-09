@@ -1,0 +1,22 @@
+﻿@page
+@model HealthCenterSecurity.Pages.Persons.IndexModel
+
+@{
+    ViewData["Title"] = "CPR";
+}
+
+<h1>CPR-side</h1>
+
+<form method="post" asp-antiforgery="true">
+    <div>
+        <label>Navn</label>
+        <input asp-for="Person.Name" class="form-control" />
+    </div>
+
+    <div>
+        <label>CPR-nummer</label>
+        <input asp-for="Person.CprNumber" class="form-control" />
+    </div>
+
+    <button type="submit" class="btn btn-primary mt-3">Gem</button>
+</form>
