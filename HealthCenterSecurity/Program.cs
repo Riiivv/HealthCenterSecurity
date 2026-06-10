@@ -1,9 +1,15 @@
 using HealthCenterSecurity.Data;
+using HealthCenterSecurity.Services;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using HealthCenterSecurity.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(
+        Path.Combine(builder.Environment.ContentRootPath, "..", "DataProtectionKeys")))
+    .SetApplicationName("HealthCenterSecurity");
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
@@ -42,6 +48,7 @@ builder.Services.ConfigureApplicationCookie(options =>
 });
 
 builder.Services.AddRazorPages();
+builder.Services.AddHttpClient();
 builder.Services.AddScoped<CprEncryptionService>();
 
 var app = builder.Build();

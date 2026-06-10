@@ -1,3 +1,5 @@
 <Solution>
+  <Project Path="HealthCenterSecurity.Api/HealthCenterSecurity.Api.csproj" Id="6e6fda89-00fa-4cf7-b069-fd69389a79c1" />
+  <Project Path="HealthCenterSecurity.Tests/HealthCenterSecurity.Tests.csproj" Id="52bd12eb-5ece-4172-9727-1429f1a98d72" />
   <Project Path="HealthCenterSecurity/HealthCenterSecurity.csproj" />
 </Solution>

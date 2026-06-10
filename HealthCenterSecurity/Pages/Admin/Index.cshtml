@@ -8,3 +8,39 @@
 <h1>Admin side</h1>
 
 <p>Kun brugere med rollen Admin kan se denne side.</p>
+
+<hr />
+
+<h3>Brugere</h3>
+@if (!string.IsNullOrEmpty(Model.Message))
+{
+    <div class="alert alert-info">
+        @Model.Message
+    </div>
+}
+<table class="table">
+    <thead>
+        <tr>
+            <th>Email</th>
+            <th>Id</th>
+            <th>Handling</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var user in Model.Users)
+        {
+            <tr>
+                <td>@user.Email</td>
+                <td>@user.Id</td>
+                <td>
+                    <form method="post" asp-page-handler="Delete">
+                        <input type="hidden" name="id" value="@user.Id" />
+                        <button type="submit" class="btn btn-danger">
+                            Slet bruger
+                        </button>
+                    </form>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
