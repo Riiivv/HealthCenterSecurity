@@ -1,0 +1,113 @@
+﻿@page
+@model HealthCenterSecurity.Areas.Identity.Pages.Account.SecureRegisterModel
+
+@{
+    ViewData["Title"] = "Sikker registrering";
+}
+
+<h1>Sikker registrering</h1>
+
+<p>
+    Her bliver brugeren først oprettet i Identity-databasen efter korrekt 2FA-verifikation.
+</p>
+
+@if (!string.IsNullOrEmpty(Model.Message))
+{
+    <div class="alert alert-info">
+        @Model.Message
+    </div>
+}
+
+<div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+@if (!Model.ShowQrCode)
+{
+    <form method="post" asp-page-handler="Start">
+        <div class="form-floating mb-3">
+            <input asp-for="Input.Email" class="form-control" placeholder="name@example.com" />
+            <label asp-for="Input.Email">Email</label>
+            <span asp-validation-for="Input.Email" class="text-danger"></span>
+        </div>
+
+        <div class="form-floating mb-3">
+            <input asp-for="Input.CprNumber" class="form-control" placeholder="1234567890" />
+            <label asp-for="Input.CprNumber">CPR-nummer</label>
+            <span asp-validation-for="Input.CprNumber" class="text-danger"></span>
+        </div>
+
+        <div class="form-floating mb-3">
+            <input asp-for="Input.Password" class="form-control" placeholder="Password" />
+            <label asp-for="Input.Password">Password</label>
+            <span asp-validation-for="Input.Password" class="text-danger"></span>
+        </div>
+
+        <div class="form-floating mb-3">
+            <input asp-for="Input.ConfirmPassword" class="form-control" placeholder="Confirm password" />
+            <label asp-for="Input.ConfirmPassword">Bekræft password</label>
+            <span asp-validation-for="Input.ConfirmPassword" class="text-danger"></span>
+        </div>
+
+        <button type="submit" class="btn btn-primary">
+            Start 2FA registrering
+        </button>
+    </form>
+}
+else
+{
+    <div class="card p-3 mb-3">
+        <h3>Opsæt Authenticator App</h3>
+
+        <p>
+            Scan QR-koden med Microsoft Authenticator eller Google Authenticator.
+        </p>
+
+        <p>
+            Manuel nøgle:
+            <kbd>@Model.SharedKey</kbd>
+        </p>
+
+        <div id="qrCode" class="mb-3"></div>
+        <div id="qrCodeData" data-url="@Model.AuthenticatorUri"></div>
+    </div>
+
+    <form method="post" asp-page-handler="Verify">
+        <div class="form-floating mb-3">
+            <input asp-for="Verify.Code" class="form-control" placeholder="123456" />
+            <label asp-for="Verify.Code">Authenticator kode</label>
+            <span asp-validation-for="Verify.Code" class="text-danger"></span>
+        </div>
+
+        <button type="submit" class="btn btn-success">
+            Bekræft 2FA og opret bruger
+        </button>
+    </form>
+}
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+    <script>
+        window.addEventListener('load', function () {
+        const qrCodeData = document.getElementById('qrCodeData');
+        const qrCodeElement = document.getElementById('qrCode');
+
+        if (!qrCodeData || !qrCodeElement) {
+        return;
+        }
+
+        const authenticatorUri = qrCodeData.getAttribute('data-url');
+
+        if (!authenticatorUri) {
+        return;
+        }
+
+        new QRCode(qrCodeElement, {
+        text: authenticatorUri,
+        width: 220,
+        height: 220
+        });
+        });
+    </script>
+}

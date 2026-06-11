@@ -3,6 +3,7 @@ using HealthCenterSecurity.Services;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Fido2NetLib;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -48,8 +49,29 @@ builder.Services.ConfigureApplicationCookie(options =>
 });
 
 builder.Services.AddRazorPages();
+builder.Services.AddControllers();
+
 builder.Services.AddHttpClient();
 builder.Services.AddScoped<CprEncryptionService>();
+
+builder.Services.AddDistributedMemoryCache();
+
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromMinutes(5);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+});
+
+builder.Services.AddSingleton<IFido2>(new Fido2(new Fido2Configuration
+{
+    ServerDomain = "localhost",
+    ServerName = "HealthCenterSecurity",
+    Origins = new HashSet<string>
+    {
+        "https://localhost:7070"
+    }
+}));
 
 var app = builder.Build();
 
@@ -69,12 +91,17 @@ app.UseHttpsRedirection();
 
 app.UseRouting();
 
+app.UseSession();
+
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapStaticAssets();
+
 app.MapRazorPages()
    .WithStaticAssets();
+
+app.MapControllers();
 
 app.Run();
 

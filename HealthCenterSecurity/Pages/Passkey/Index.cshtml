@@ -1,0 +1,247 @@
+﻿@page
+@model HealthCenterSecurity.Pages.Passkey.RegisterModel
+
+@{
+    ViewData["Title"] = "Passkey / Passwordless";
+}
+
+<h1>Passkey / Passwordless</h1>
+
+<p>Demo: Opretter en Identity-bruger uden password og bruger rigtig passkey til registrering og login.</p>
+
+<h2>Registrer rigtig passkey</h2>
+
+<div class="form-floating mb-3">
+    <input id="registerEmail" class="form-control" placeholder="name@example.com" />
+    <label for="registerEmail">Email til registrering</label>
+</div>
+
+<div class="form-floating mb-3">
+    <input id="registerCpr" class="form-control" placeholder="1234567890" maxlength="10" />
+    <label for="registerCpr">CPR-nummer</label>
+</div>
+
+<button type="button" class="btn btn-primary" onclick="registerPasskey()">
+    Registrer passkey
+</button>
+
+<hr />
+
+<h2>Login med passkey</h2>
+
+<div class="form-floating mb-3">
+    <input id="loginEmail" class="form-control" placeholder="name@example.com" />
+    <label for="loginEmail">Email til login</label>
+</div>
+
+<button type="button" class="btn btn-success" onclick="loginWithPasskey()">
+    Login med passkey
+</button>
+
+@if (!string.IsNullOrEmpty(Model.Message))
+{
+    <div class="alert alert-info mt-3">
+        @Model.Message
+    </div>
+}
+
+<div id="passkeyMessage" class="alert alert-info mt-3" style="display:none;"></div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+
+    <script>
+        function base64UrlToBuffer(base64url) {
+            const padding = '='.repeat((4 - base64url.length % 4) % 4);
+            const base64 = (base64url + padding).replace(/-/g, '+').replace(/_/g, '/');
+            const raw = window.atob(base64);
+            const buffer = new ArrayBuffer(raw.length);
+            const bytes = new Uint8Array(buffer);
+
+            for (let i = 0; i < raw.length; i++) {
+                bytes[i] = raw.charCodeAt(i);
+            }
+
+            return buffer;
+        }
+
+        function bufferToBase64Url(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+
+            return window.btoa(binary)
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=/g, '');
+        }
+
+        function showPasskeyMessage(message) {
+            const box = document.getElementById('passkeyMessage');
+            box.innerText = message;
+            box.style.display = 'block';
+        }
+
+        async function registerPasskey() {
+            const email = document.getElementById('registerEmail').value;
+            const cprNumber = document.getElementById('registerCpr').value;
+
+            if (!email) {
+                showPasskeyMessage('Skriv en email til registrering først.');
+                return;
+            }
+
+            if (!cprNumber) {
+                showPasskeyMessage('Skriv CPR-nummer først.');
+                return;
+            }
+
+            if (!/^\d{10}$/.test(cprNumber)) {
+                showPasskeyMessage('CPR-nummer skal være præcis 10 cifre.');
+                return;
+            }
+
+            const beginResponse = await fetch('/passkey/register/begin', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    username: email,
+                    cprNumber: cprNumber
+                })
+            });
+
+            if (!beginResponse.ok) {
+                const errorText = await beginResponse.text();
+                showPasskeyMessage('Kunne ikke starte passkey registration: ' + errorText);
+                return;
+            }
+
+            const options = await beginResponse.json();
+
+            options.challenge = base64UrlToBuffer(options.challenge);
+            options.user.id = base64UrlToBuffer(options.user.id);
+
+            if (options.excludeCredentials) {
+                options.excludeCredentials = options.excludeCredentials.map(cred => {
+                    cred.id = base64UrlToBuffer(cred.id);
+                    return cred;
+                });
+            }
+
+            const credential = await navigator.credentials.create({
+                publicKey: options
+            });
+
+            const attestationResponse = {
+                id: credential.id,
+                rawId: bufferToBase64Url(credential.rawId),
+                type: credential.type,
+                response: {
+                    attestationObject: bufferToBase64Url(credential.response.attestationObject),
+                    clientDataJSON: bufferToBase64Url(credential.response.clientDataJSON),
+                    transports: credential.response.getTransports
+                        ? credential.response.getTransports()
+                        : []
+                },
+                clientExtensionResults: credential.getClientExtensionResults()
+            };
+
+            const completeResponse = await fetch('/passkey/register/complete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(attestationResponse)
+            });
+
+            if (!completeResponse.ok) {
+                const errorText = await completeResponse.text();
+                showPasskeyMessage('Passkey registration fejlede: ' + errorText);
+                return;
+            }
+
+            showPasskeyMessage('Passkey registreret korrekt. CPR er gemt som hash, og PasswordHash er NULL.');
+        }
+
+        async function loginWithPasskey() {
+            const email = document.getElementById('loginEmail').value;
+
+            if (!email) {
+                showPasskeyMessage('Skriv en email til login først.');
+                return;
+            }
+
+            const beginResponse = await fetch('/passkey/login/begin', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ username: email })
+            });
+
+            if (!beginResponse.ok) {
+                const errorText = await beginResponse.text();
+                showPasskeyMessage('Kunne ikke starte passkey login: ' + errorText);
+                return;
+            }
+
+            const options = await beginResponse.json();
+
+            options.challenge = base64UrlToBuffer(options.challenge);
+
+            if (options.allowCredentials) {
+                options.allowCredentials = options.allowCredentials.map(cred => {
+                    cred.id = base64UrlToBuffer(cred.id);
+                    return cred;
+                });
+            }
+
+            const assertion = await navigator.credentials.get({
+                publicKey: options
+            });
+
+            const assertionResponse = {
+                id: assertion.id,
+                rawId: bufferToBase64Url(assertion.rawId),
+                type: assertion.type,
+                response: {
+                    authenticatorData: bufferToBase64Url(assertion.response.authenticatorData),
+                    clientDataJSON: bufferToBase64Url(assertion.response.clientDataJSON),
+                    signature: bufferToBase64Url(assertion.response.signature),
+                    userHandle: assertion.response.userHandle
+                        ? bufferToBase64Url(assertion.response.userHandle)
+                        : null
+                },
+                clientExtensionResults: assertion.getClientExtensionResults()
+            };
+
+            const completeResponse = await fetch('/passkey/login/complete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(assertionResponse)
+            });
+
+            if (!completeResponse.ok) {
+                const errorText = await completeResponse.text();
+                showPasskeyMessage('Passkey login fejlede: ' + errorText);
+                return;
+            }
+
+            const result = await completeResponse.json();
+
+            if (result.redirectUrl) {
+                window.location.href = result.redirectUrl;
+                return;
+            }
+
+            showPasskeyMessage('Passkey login gennemført.');
+        }
+    </script>
+}

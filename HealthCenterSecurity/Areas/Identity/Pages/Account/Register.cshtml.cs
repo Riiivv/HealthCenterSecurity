@@ -123,7 +123,7 @@ public class RegisterModel : PageModel
         {
             var user = CreateUser();
 
-            user.CprNumber = _encryptionService.Encrypt(Input.CprNumber);
+            user.CprNumber = _encryptionService.Hash(Input.CprNumber);
 
             await _userStore.SetUserNameAsync(user, Input.Email, CancellationToken.None);
             await _emailStore.SetEmailAsync(user, Input.Email, CancellationToken.None);
@@ -148,15 +148,14 @@ public class RegisterModel : PageModel
                 await _emailSender.SendEmailAsync(Input.Email, "Confirm your email",
                     $"Please confirm your account by <a href='{HtmlEncoder.Default.Encode(callbackUrl)}'>clicking here</a>.");
 
-                if (_userManager.Options.SignIn.RequireConfirmedAccount)
-                {
-                    return RedirectToPage("RegisterConfirmation", new { email = Input.Email, returnUrl = returnUrl });
-                }
-                else
-                {
-                    await _signInManager.SignInAsync(user, isPersistent: false);
-                    return LocalRedirect(returnUrl);
-                }
+                user.EmailConfirmed = true;
+                await _userManager.UpdateAsync(user);
+
+                await _signInManager.SignInAsync(user, isPersistent: false);
+
+                return RedirectToPage(
+                    "/Account/Manage/EnableAuthenticator",
+                    new { area = "Identity" });
             }
             foreach (var error in result.Errors)
             {

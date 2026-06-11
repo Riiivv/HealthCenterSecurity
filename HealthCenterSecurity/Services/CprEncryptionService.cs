@@ -12,36 +12,25 @@ public class CprEncryptionService
         var keyText = configuration["CprEncryptionKey"]
             ?? throw new InvalidOperationException("CprEncryptionKey mangler i appsettings.json");
 
-        _key = SHA256.HashData(Encoding.UTF8.GetBytes(keyText));
+        _key = Encoding.UTF8.GetBytes(keyText);
     }
 
-    public string Encrypt(string plainText)
+    public string Hash(string cprNumber)
     {
-        using var aes = Aes.Create();
-        aes.Key = _key;
-        aes.GenerateIV();
+        using var hmac = new HMACSHA256(_key);
 
-        using var encryptor = aes.CreateEncryptor();
+        var bytes = Encoding.UTF8.GetBytes(cprNumber);
+        var hash = hmac.ComputeHash(bytes);
 
-        var plainBytes = Encoding.UTF8.GetBytes(plainText);
-        var encryptedBytes = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
-
-        return Convert.ToBase64String(aes.IV) + ":" + Convert.ToBase64String(encryptedBytes);
+        return Convert.ToBase64String(hash);
     }
 
-    public string Decrypt(string encryptedText)
+    public bool Verify(string cprNumber, string storedHash)
     {
-        var parts = encryptedText.Split(':');
+        var newHash = Hash(cprNumber);
 
-        using var aes = Aes.Create();
-        aes.Key = _key;
-        aes.IV = Convert.FromBase64String(parts[0]);
-
-        using var decryptor = aes.CreateDecryptor();
-
-        var encryptedBytes = Convert.FromBase64String(parts[1]);
-        var decryptedBytes = decryptor.TransformFinalBlock(encryptedBytes, 0, encryptedBytes.Length);
-
-        return Encoding.UTF8.GetString(decryptedBytes);
+        return CryptographicOperations.FixedTimeEquals(
+            Convert.FromBase64String(newHash),
+            Convert.FromBase64String(storedHash));
     }
 }

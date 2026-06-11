@@ -28,7 +28,7 @@ public class IndexModel : PageModel
 
     public async Task<IActionResult> OnPostAsync()
     {
-        Person.CprNumber = _encryptionService.Encrypt(Person.CprNumber);
+        Person.CprNumber = _encryptionService.Hash(Person.CprNumber);
 
         _context.Persons.Add(Person);
         await _context.SaveChangesAsync();
