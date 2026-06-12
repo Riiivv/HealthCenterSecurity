@@ -1,135 +1,24 @@
-﻿using System.Security.Cryptography;
-using System.Text;
+﻿using System.Reflection;
+using Microsoft.Extensions.Configuration;
+using Xunit;
 
 namespace HealthCenterSecurity.Tests;
 
 public class SecurityTests
 {
+    private static Assembly WebAssembly => Assembly.Load("HealthCenterSecurity");
+    private static Assembly ApiAssembly => Assembly.Load("HealthCenterSecurity.Api");
+
     [Fact]
-    public void Backlog01_Register_ShouldRequireEmailPasswordAndCpr()
+    public void Backlog01_CprService_ShouldHashCprUsingProjectService()
     {
         // Arrange
-        var email = "borger@test.dk";
-        var password = "Password123!";
+        var service = CreateCprService();
+        var serviceType = service.GetType();
         var cpr = "1234567890";
 
         // Act
-        var isValid = email.Contains("@")
-                      && password.Length >= 10
-                      && cpr.Length == 10
-                      && cpr.All(char.IsDigit);
-
-        // Assert
-        Assert.True(isValid);
-    }
-
-    [Fact]
-    public void Backlog02_Login_ShouldRequireEmailAndPassword()
-    {
-        // Arrange
-        var email = "borger@test.dk";
-        var password = "Password123!";
-
-        // Act
-        var canLoginAttemptStart =
-            !string.IsNullOrWhiteSpace(email) &&
-            !string.IsNullOrWhiteSpace(password);
-
-        // Assert
-        Assert.True(canLoginAttemptStart);
-    }
-
-    [Fact]
-    public void Backlog03_MfaCode_ShouldBeSixDigits()
-    {
-        // Arrange
-        var authenticatorCode = "123456";
-
-        // Act
-        var isValidMfaCode =
-            authenticatorCode.Length == 6 &&
-            authenticatorCode.All(char.IsDigit);
-
-        // Assert
-        Assert.True(isValidMfaCode);
-    }
-
-    [Fact]
-    public void Backlog04_BorgerPage_ShouldRequireBorgerRole()
-    {
-        // Arrange
-        var requiredRole = "Borger";
-
-        // Act
-        var hasCorrectRoleRequirement = requiredRole == "Borger";
-
-        // Assert
-        Assert.True(hasCorrectRoleRequirement);
-    }
-
-    [Fact]
-    public void Backlog05_AdminPage_ShouldRequireAdminRole()
-    {
-        // Arrange
-        var requiredRole = "Admin";
-
-        // Act
-        var hasCorrectRoleRequirement = requiredRole == "Admin";
-
-        // Assert
-        Assert.True(hasCorrectRoleRequirement);
-    }
-
-    [Fact]
-    public void Backlog06_Admin_ShouldBeAbleToSeeUserList()
-    {
-        // Arrange
-        var users = new[] { "borger1@test.dk", "borger2@test.dk" };
-
-        // Act
-        var userCount = users.Length;
-
-        // Assert
-        Assert.True(userCount > 0);
-    }
-
-    [Fact]
-    public void Backlog07_DeleteUser_ShouldUseWebApiEndpoint()
-    {
-        // Arrange
-        var httpMethod = "DELETE";
-        var endpoint = "/api/users/delete/test-user-id";
-
-        // Act
-        var isDeleteEndpoint =
-            httpMethod == "DELETE" &&
-            endpoint.Contains("/api/users");
-
-        // Assert
-        Assert.True(isDeleteEndpoint);
-    }
-
-    [Fact]
-    public void Backlog08_DeleteUserEndpoint_ShouldRequireAdminRole()
-    {
-        // Arrange
-        var authorizeRole = "Admin";
-
-        // Act
-        var isAdminProtected = authorizeRole == "Admin";
-
-        // Assert
-        Assert.True(isAdminProtected);
-    }
-
-    [Fact]
-    public void Backlog09_Cpr_ShouldBeHashedAndNotPlainText()
-    {
-        // Arrange
-        var cpr = "1234567890";
-
-        // Act
-        var hash = HashCpr(cpr);
+        var hash = (string)serviceType.GetMethod("Hash")!.Invoke(service, [cpr])!;
 
         // Assert
         Assert.NotEqual(cpr, hash);
@@ -137,120 +26,271 @@ public class SecurityTests
     }
 
     [Fact]
-    public void Backlog10_PasswordPolicy_ShouldRequireStrongPassword()
+    public void Backlog02_CprHash_ShouldBeDeterministic()
     {
         // Arrange
-        var password = "Password123!"; // abc // Password123!
+        var service = CreateCprService();
+        var serviceType = service.GetType();
+        var cpr = "1234567890";
 
         // Act
-        var isStrongPassword =
-            password.Length >= 10 &&
-            password.Any(char.IsUpper) &&
-            password.Any(char.IsDigit) &&
-            password.Any(c => !char.IsLetterOrDigit(c));
+        var hash1 = (string)serviceType.GetMethod("Hash")!.Invoke(service, [cpr])!;
+        var hash2 = (string)serviceType.GetMethod("Hash")!.Invoke(service, [cpr])!;
 
         // Assert
-        Assert.True(isStrongPassword);
+        Assert.Equal(hash1, hash2);
     }
 
     [Fact]
-    public void Backlog11_Lockout_ShouldTriggerAfterFiveFailedAttempts()
+    public void Backlog03_CprVerify_ShouldAcceptCorrectCpr()
     {
         // Arrange
-        var maxFailedAttempts = 5;
-        var lockoutMinutes = 5;
+        var service = CreateCprService();
+        var serviceType = service.GetType();
+        var cpr = "1234567890";
+        var hash = (string)serviceType.GetMethod("Hash")!.Invoke(service, [cpr])!;
 
         // Act
-        var lockoutIsConfigured =
-            maxFailedAttempts == 5 &&
-            lockoutMinutes == 5;
+        var isValid = (bool)serviceType.GetMethod("Verify")!.Invoke(service, [cpr, hash])!;
 
         // Assert
-        Assert.True(lockoutIsConfigured);
+        Assert.True(isValid);
     }
 
     [Fact]
-    public void Backlog12_Https_ShouldUsePfxCertificate()
+    public void Backlog04_CprVerify_ShouldRejectWrongCpr()
     {
         // Arrange
-        var certificatePath = "localhost-healthcenter.pfx";
-        var url = "https://localhost:7070";
+        var service = CreateCprService();
+        var serviceType = service.GetType();
+        var realCpr = "1234567890";
+        var wrongCpr = "9999999999";
+        var hash = (string)serviceType.GetMethod("Hash")!.Invoke(service, [realCpr])!;
 
         // Act
-        var httpsWithCertificate =
-            certificatePath.EndsWith(".pfx") &&
-            url.StartsWith("https://");
+        var isValid = (bool)serviceType.GetMethod("Verify")!.Invoke(service, [wrongCpr, hash])!;
 
         // Assert
-        Assert.True(httpsWithCertificate);
+        Assert.False(isValid);
     }
 
     [Fact]
-    public void Backlog13_Cookies_ShouldUseSecureSettings()
+    public void Backlog05_PasskeyCredential_Model_ShouldExistInProject()
     {
         // Arrange
-        var httpOnly = true;
-        var secure = true;
-        var sameSite = "Strict";
+        var type = WebAssembly.GetTypes()
+            .FirstOrDefault(t => t.Name == "PasskeyCredential");
 
         // Act
-        var cookiesAreSecure =
-            httpOnly &&
-            secure &&
-            sameSite == "Strict";
+        var exists = type != null;
 
         // Assert
-        Assert.True(cookiesAreSecure);
+        Assert.True(exists);
     }
 
     [Fact]
-    public void Backlog14_Forms_ShouldUseCsrfToken()
+    public void Backlog06_PasskeyCredential_ShouldContainRequiredProperties()
     {
         // Arrange
-        var csrfTokenFieldName = "__RequestVerificationToken";
+        var type = WebAssembly.GetTypes()
+            .First(t => t.Name == "PasskeyCredential");
 
         // Act
-        var usesCsrfToken = csrfTokenFieldName == "__RequestVerificationToken";
+        var propertyNames = type.GetProperties().Select(p => p.Name).ToList();
 
         // Assert
-        Assert.True(usesCsrfToken);
+        Assert.Contains("UserId", propertyNames);
+        Assert.Contains("CredentialId", propertyNames);
+        Assert.Contains("PublicKey", propertyNames);
+        Assert.Contains("SignatureCounter", propertyNames);
+        Assert.Contains("CredType", propertyNames);
     }
 
     [Fact]
-    public void Backlog15_TestPlan_ShouldContainSecurityAndFunctionalTests()
+    public void Backlog07_ApplicationDbContext_ShouldContainPasskeyCredentialsDbSet()
     {
         // Arrange
-        var testAreas = new[]
+        var dbContextType = WebAssembly.GetTypes()
+            .First(t => t.Name == "ApplicationDbContext");
+
+        // Act
+        var hasPasskeyDbSet = dbContextType.GetProperties()
+            .Any(p => p.Name == "PasskeyCredentials");
+
+        // Assert
+        Assert.True(hasPasskeyDbSet);
+    }
+
+    [Fact]
+    public void Backlog08_PasskeyController_ShouldHaveRegisterBeginEndpoint()
+    {
+        // Arrange
+        var controller = WebAssembly.GetTypes()
+            .First(t => t.Name == "PasskeyController");
+
+        // Act
+        var methodExists = controller.GetMethods()
+            .Any(m => m.Name == "RegisterBegin");
+
+        // Assert
+        Assert.True(methodExists);
+    }
+
+    [Fact]
+    public void Backlog09_PasskeyController_ShouldHaveLoginCompleteEndpoint()
+    {
+        // Arrange
+        var controller = WebAssembly.GetTypes()
+            .First(t => t.Name == "PasskeyController");
+
+        // Act
+        var methodExists = controller.GetMethods()
+            .Any(m => m.Name == "LoginComplete");
+
+        // Assert
+        Assert.True(methodExists);
+    }
+
+    [Fact]
+    public void Backlog10_ApiDeleteEndpoint_ShouldRequireAdminRole()
+    {
+        // Arrange
+        var usersController = ApiAssembly.GetTypes()
+            .First(t => t.Name == "UsersController");
+
+        var deleteMethod = usersController.GetMethods()
+            .FirstOrDefault(m => m.GetCustomAttributes()
+                .Any(a => a.GetType().Name == "HttpDeleteAttribute"));
+
+        // Act
+        var authorizeAttributes = usersController.GetCustomAttributes()
+            .Concat(deleteMethod?.GetCustomAttributes() ?? [])
+            .Where(a => a.GetType().Name == "AuthorizeAttribute")
+            .ToList();
+
+        var hasAdminAuthorize = authorizeAttributes.Any(attr =>
+            attr.GetType().GetProperty("Roles")?.GetValue(attr)?.ToString() == "Admin");
+
+        // Assert
+        Assert.NotNull(deleteMethod);
+        Assert.True(hasAdminAuthorize);
+    }
+
+    [Fact]
+    public void Backlog11_SecureRegisterPage_ShouldExist()
+    {
+        // Arrange
+        var pageModel = WebAssembly.GetTypes()
+            .FirstOrDefault(t => t.Name == "SecureRegisterModel");
+
+        // Act
+        var exists = pageModel != null;
+
+        // Assert
+        Assert.True(exists);
+    }
+
+    [Fact]
+    public void Backlog12_SecureRegister_ShouldHaveStartAndVerifyHandlers()
+    {
+        // Arrange
+        var pageModel = WebAssembly.GetTypes()
+            .First(t => t.Name == "SecureRegisterModel");
+
+        // Act
+        var methods = pageModel.GetMethods().Select(m => m.Name).ToList();
+
+        // Assert
+        Assert.Contains("OnPostStartAsync", methods);
+        Assert.Contains("OnPostVerifyAsync", methods);
+    }
+
+    [Fact]
+    public void Backlog13_Program_ShouldConfigurePasswordPolicyAndLockout()
+    {
+        // Arrange
+        var programText = File.ReadAllText(GetWebProjectFile("Program.cs"));
+
+        // Act
+        var hasPasswordPolicy =
+            programText.Contains("options.Password.RequiredLength = 10") &&
+            programText.Contains("options.Password.RequireUppercase = true") &&
+            programText.Contains("options.Password.RequireDigit = true") &&
+            programText.Contains("options.Password.RequireNonAlphanumeric = true");
+
+        var hasLockout =
+            programText.Contains("options.Lockout.MaxFailedAccessAttempts = 5") &&
+            programText.Contains("TimeSpan.FromMinutes(5)");
+
+        // Assert
+        Assert.True(hasPasswordPolicy);
+        Assert.True(hasLockout);
+    }
+
+    [Fact]
+    public void Backlog14_Program_ShouldConfigureSecureCookies()
+    {
+        // Arrange
+        var programText = File.ReadAllText(GetWebProjectFile("Program.cs"));
+
+        // Act
+        var hasSecureCookies =
+            programText.Contains("options.Cookie.HttpOnly = true") &&
+            programText.Contains("CookieSecurePolicy.Always") &&
+            programText.Contains("SameSiteMode.Strict");
+
+        // Assert
+        Assert.True(hasSecureCookies);
+    }
+
+    [Fact]
+    public void Backlog15_AppSettings_ShouldConfigureHttpsCertificate()
+    {
+        // Arrange
+        var appsettings = new ConfigurationBuilder()
+            .AddJsonFile(GetWebProjectFile("appsettings.json"))
+            .Build();
+
+        // Act
+        var url = appsettings["Kestrel:Endpoints:Https:Url"];
+        var certificatePath = appsettings["Kestrel:Endpoints:Https:Certificate:Path"];
+
+        // Assert
+        Assert.Equal("https://localhost:7070", url);
+        Assert.Equal("localhost-healthcenter.pfx", certificatePath);
+    }
+
+    private static object CreateCprService()
+    {
+        var serviceType = WebAssembly.GetTypes()
+            .First(t => t.FullName == "HealthCenterSecurity.Services.CprEncryptionService");
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["CprEncryptionKey"] = "MinMegetHemmeligeCPRNogle123!"
+            })
+            .Build();
+
+        return Activator.CreateInstance(serviceType, configuration)!;
+    }
+
+    private static string GetWebProjectFile(string fileName)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+
+        while (directory != null)
         {
-            "Login",
-            "Roller",
-            "MFA",
-            "CPR",
-            "Cookies",
-            "API delete",
-            "CSRF",
-            "XSS"
-        };
+            var candidate = Path.Combine(directory.FullName, "HealthCenterSecurity", fileName);
 
-        // Act
-        var containsRequiredAreas =
-            testAreas.Contains("Login") &&
-            testAreas.Contains("CPR") &&
-            testAreas.Contains("API delete");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
 
-        // Assert
-        Assert.True(containsRequiredAreas);
-    }
+            directory = directory.Parent;
+        }
 
-    private static string HashCpr(string cpr)
-    {
-        var key = Encoding.UTF8.GetBytes("MinMegetHemmeligeCPRNogle123!");
-
-        using var hmac = new HMACSHA256(key);
-
-        var bytes = Encoding.UTF8.GetBytes(cpr);
-        var hash = hmac.ComputeHash(bytes);
-
-        return Convert.ToBase64String(hash);
+        throw new FileNotFoundException($"Kunne ikke finde {fileName}");
     }
 }
